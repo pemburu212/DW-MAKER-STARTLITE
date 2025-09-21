@@ -1,0 +1,1634 @@
+    
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>DW MAKER (By : BTX)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- <data class="header-utama">
+    <div class="BTX-judul" id="Judul" >DW MAKER</div>
+    <div class="BTX-name" id="Judul" >BTX</div>
+  </data> -->
+  <div id="map-footer">BTX</div>
+  
+  <div class="button-container">
+    <button onclick="setBaseMode()">Select FAT/ODP</button>    
+    <button onclick="setPolygonMode()">Select Coverage</button>
+    <button onclick="setPlacemarkMode()">Select HP/HC</button>
+    <button onclick="setAreaMode()">Select Area (Polygon)</button>
+    <button onclick="setManualPathMode()">Buat Path Manual</button>    
+    <button onclick="generatePaths()">Running</button>
+    <button onclick="exportKML()">Export KML</button>
+    <button onclick="resetAll()">Reset</button>
+    <button onclick="UnloadAll()">UnloadAll</button>
+  </div>
+  <div class="main-container">
+    <div class="sidebar-kiri">
+      <div class="custom-file">
+        <label class="custom-file-label" for="kmlInput">Open File</label>
+        <input type="file" id="kmlInput" accept=".kml" />
+        <span class="file-name" id="fileName">Gass</span>
+      </div>
+      <div class="textbox-container">
+        <div class = "text-conter-h">
+          <label for="groupName">Nama Folder:</label>
+          <input type="text" id="groupName" placeholder="ODC/FDT" />
+        </div>
+        <div class = "text-conter-h">
+          <label for="exportFileName">Nama file export:</label>
+          <input type="text" id="exportFileName" placeholder="Nama File" /> <!--value="exported_data" --->
+        </div>
+      </div>
+      <h3>📁 Folder </h3>
+        <div class="panel">
+          <ul id="baseGroupList"></ul>
+      </div>
+      <h3>📄 Files</h3>
+      <div class="panel">
+        <ul id="fileLayerList"></ul>
+      </div>
+      <!-- Modal Edit Style dipindah ke bawah body -->
+    </div>
+
+    <div id="map"></div>
+  </div>
+
+  <!-- Modal Edit Style (selalu di bawah body) -->
+  <div id="editStyleModal" style="display:none;position:fixed;top:30%;left:50%;transform:translate(-50%,-30%);background:#fff;border:1px solid #888;padding:20px;z-index:9999;box-shadow:0 2px 10px #0008;min-width:220px;">
+    <h4>Edit Style</h4>
+    <form id="editStyleForm" onsubmit="return false;">
+      <label id="editColorLabel">Warna garis: </label>
+      <input type="color" id="editColor" value="#ff00ff"><br><br>
+      <label id="editWeightLabel">Ukuran garis: </label>
+      <input type="number" id="editWeight" min="1" max="10" value="3" style="width:50px;"><br><br>
+      <button type="button" id="editStyleSave">Simpan</button>
+      <button type="button" id="editStyleCancel">Batal</button>
+    </form>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
+  <script>
+    // Popup edit style untuk layer
+    let currentEditStyle = null;
+    function showEditStyleModal(opts) {
+      const modal = document.getElementById('editStyleModal');
+      const colorInput = document.getElementById('editColor');
+      const weightInput = document.getElementById('editWeight');
+      const colorLabel = document.getElementById('editColorLabel');
+      const weightLabel = document.getElementById('editWeightLabel');
+      if (!modal || !colorInput || !weightInput || !colorLabel || !weightLabel) {
+        alert('Edit style modal tidak ditemukan di halaman.');
+        return;
+      }
+      // Default
+    let color = '#ff00ff', weight = 3;
+      // Tampilkan input sesuai tipe
+    colorLabel.style.display = '';
+    weightLabel.style.display = '';
+    colorInput.style.display = '';
+    weightInput.style.display = '';
+      if ((opts.type === 'marker' && opts.marker) || (opts.type === 'file' && opts.layerGroup)) {
+        // Jika file hanya marker, edit semua marker di layerGroup
+        let markers = [];
+        if (opts.type === 'marker' && opts.marker) {
+          markers = [opts.marker];
+        } else if (opts.type === 'file' && opts.layerGroup) {
+          let onlyMarkers = true;
+          opts.layerGroup.eachLayer(l => { if (!(l instanceof L.Marker)) onlyMarkers = false; });
+          if (onlyMarkers) {
+            opts.layerGroup.eachLayer(l => { if (l instanceof L.Marker) markers.push(l); });
+          }
+        }
+        if (markers.length > 0) {
+          // Ambil warna/ukuran dari marker pertama
+          color = '#3388ff';
+          weight = 25;
+          const m0 = markers[0];
+          if (m0.options.icon && m0.options.icon.options) {
+            color = m0.options.icon.options.markerColor || color;
+            weight = m0.options.icon.options.iconSize ? m0.options.icon.options.iconSize[0] : weight;
+          }
+          // Pastikan warna hex
+          if (!color.startsWith('#')) color = '#3388ff';
+          colorInput.value = color;
+          weightInput.value = weight;
+          colorInput.type = 'color';
+          weightInput.type = 'number';
+          weightInput.min = 16; weightInput.max = 50;
+          weightInput.step = 1;
+          colorLabel.textContent = 'Warna marker: ';
+          weightLabel.textContent = 'Ukuran marker: ';
+          modal.style.display = '';
+          currentEditStyle = { ...opts, markers };
+          return;
+        }
+      }
+      // Polyline (default)
+      if (!(opts.type === 'marker' && opts.marker) && !(opts.type === 'file' && opts.layerGroup)) {
+        colorInput.type = 'color';
+        weightInput.type = 'number';
+        weightInput.min = 1; weightInput.max = 10;
+        weightInput.step = 1;
+        colorLabel.textContent = 'Warna garis: ';
+        weightLabel.textContent = 'Ukuran garis: ';
+        if (opts.type === 'file' && opts.layerGroup) {
+          let found = false;
+          opts.layerGroup.eachLayer(l => {
+            if (l instanceof L.Polyline && !(l instanceof L.Polygon)) {
+              color = l.options.color || color;
+              weight = l.options.weight || weight;
+              found = true;
+            }
+          });
+          if (!found) {
+            color = '#ff00ff';
+            weight = 3;
+          }
+        } else if (opts.type === 'dw') {
+          const dw = paths.find(p => (p.polyline || p)._dwType === 'dw');
+          if (dw) {
+            const poly = dw.polyline || dw;
+            color = poly.options.color || color;
+            weight = poly.options.weight || weight;
+          }
+        } else if (opts.type === 'lineds') {
+          if (manualPaths.length > 0) {
+            color = manualPaths[0].polyline.options.color || color;
+            weight = manualPaths[0].polyline.options.weight || weight;
+          }
+        }
+        colorInput.value = color;
+        weightInput.value = weight;
+        modal.style.display = '';
+        currentEditStyle = opts;
+      }
+    }
+    document.getElementById('editStyleCancel').onclick = function() {
+      document.getElementById('editStyleModal').style.display = 'none';
+      currentEditStyle = null;
+    };
+    document.getElementById('editStyleSave').onclick = function() {
+      if (!currentEditStyle) return;
+     
+      const color = document.getElementById('editColor').value;
+      const weight = parseInt(document.getElementById('editWeight').value) || 3;
+       if (currentEditStyle.type === 'dw'){
+        weightstyledw = weight;
+        colorstyledw = color;
+      } else if (currentEditStyle.type === 'lineds'){
+        weightstylelds = weight;
+        colorstylelds = color;
+      }
+      if (currentEditStyle.markers && Array.isArray(currentEditStyle.markers)) {
+        // Ubah semua marker
+        currentEditStyle.markers.forEach(marker => {
+          const iconSize = [weight, weight * 41 / 25];
+          const svgIcon = L.divIcon({
+            className: '',
+            iconSize: iconSize,
+            html: `<svg xmlns='http://www.w3.org/2000/svg' width='${iconSize[0]}' height='${iconSize[1]}' viewBox='0 0 25 41'><path d='M12.5 0C5.6 0 0 5.6 0 12.5c0 9.6 11.2 27.7 11.7 28.5.4.6 1.3.6 1.7 0 .5-.8 11.7-18.9 11.7-28.5C25 5.6 19.4 0 12.5 0z' fill='${color}' stroke='#333' stroke-width='2'/><circle cx='12.5' cy='12.5' r='5.5' fill='#fff' stroke='#333' stroke-width='2'/></svg>`
+          });
+          marker.setIcon(svgIcon);
+        });
+      } else if (currentEditStyle.type === 'marker' && currentEditStyle.marker) {
+        // Ganti icon marker dengan SVG dinamis (fallback)
+        const iconSize = [weight, weight * 41 / 25];
+        const svgIcon = L.divIcon({
+          className: '',
+          iconSize: iconSize,
+          html: `<svg xmlns='http://www.w3.org/2000/svg' width='${iconSize[0]}' height='${iconSize[1]}' viewBox='0 0 25 41'><path d='M12.5 0C5.6 0 0 5.6 0 12.5c0 9.6 11.2 27.7 11.7 28.5.4.6 1.3.6 1.7 0 .5-.8 11.7-18.9 11.7-28.5C25 5.6 19.4 0 12.5 0z' fill='${color}' stroke='#333' stroke-width='2'/><circle cx='12.5' cy='12.5' r='5.5' fill='#fff' stroke='#333' stroke-width='2'/></svg>`
+        });
+        currentEditStyle.marker.setIcon(svgIcon);
+      } else if (currentEditStyle.type === 'file' && currentEditStyle.layerGroup) {
+        currentEditStyle.layerGroup.eachLayer(l => {
+          if (l instanceof L.Polyline && !(l instanceof L.Polygon)) {
+            l.setStyle({ color: color, weight: weight });
+          }
+        });
+      } else if (currentEditStyle.type === 'dw') {
+        paths.forEach(p => {
+          const poly = p.polyline || p;
+          if (poly._dwType === 'dw') poly.setStyle({ color: color, weight: weight });
+        });
+      } else if (currentEditStyle.type === 'lineds') {
+        manualPaths.forEach(mp => {
+          if (mp.polyline) mp.polyline.setStyle({ color: color, weight: weight });
+        });
+      }
+      document.getElementById('editStyleModal').style.display = 'none';
+      currentEditStyle = null;
+    };
+    // Tambah folder DW dan LINE DS ke fileLayerList (jika belum ada)
+    function ensureDWFolderInFileList() {
+      const fileLayerList = document.getElementById('fileLayerList');
+      if (!fileLayerList) return;
+      if (document.getElementById('dwFolderItem')) return;
+      const li = document.createElement('li');
+      li.id = 'dwFolderItem';
+      li.className = 'file-layer-item';
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = true;
+      checkbox.onchange = () => {
+        // Show/hide semua path hasil generate
+        paths.forEach(p => {
+          const polyline = p.polyline || p;
+          if (polyline && polyline._dwType === 'dw') {
+            if (checkbox.checked) {
+              map.addLayer(polyline);
+            } else {
+              map.removeLayer(polyline);
+            }
+          }
+        });
+      };
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = ' DW';
+      // Tombol Edit Style
+      const editBtn = document.createElement('button');
+      editBtn.textContent = '✏️';
+      editBtn.title = 'Edit warna/ukuran garis';
+      editBtn.className = 'edit-btn';
+      editBtn.onclick = () => {
+        showEditStyleModal({
+          type: 'dw',
+          li: li
+        });
+      };
+      label.appendChild(checkbox);
+      label.appendChild(nameSpan);
+      li.appendChild(label);
+      li.appendChild(editBtn);
+      fileLayerList.appendChild(li);
+    }
+    function ensureLineDSFolderInFileList() {
+      const fileLayerList = document.getElementById('fileLayerList');
+      if (!fileLayerList) return;
+      if (document.getElementById('linedsFolderItem')) return;
+      const li = document.createElement('li');
+      li.id = 'linedsFolderItem';
+      li.className = 'file-layer-item';
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = true;
+      checkbox.onchange = () => {
+        // Show/hide semua path manual
+        manualPaths.forEach(mp => {
+          if (mp.polyline) {
+            if (checkbox.checked) {
+              map.addLayer(mp.polyline);
+            } else {
+              map.removeLayer(mp.polyline);
+            }
+          }
+        });
+      };
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = ' LINE DS';
+      // Tombol Edit Style
+      const editBtn = document.createElement('button');
+      editBtn.textContent = '✏️';
+      editBtn.title = 'Edit warna/ukuran garis';
+      editBtn.className = 'edit-btn';
+      editBtn.onclick = () => {
+        showEditStyleModal({
+          type: 'lineds',
+          li: li
+        });
+      };
+      label.appendChild(checkbox);
+      label.appendChild(nameSpan);
+      li.appendChild(label);
+      li.appendChild(editBtn);
+      fileLayerList.appendChild(li);
+    }
+    let map = L.map('map', {
+      maxZoom: 22,
+      preferCanvas: true
+    }).setView([-7.0, 110.0], 10);
+
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles © Esri',
+      maxZoom: 22
+    }).addTo(map);
+
+    let placemarks = [];
+    let polygons = [];
+    let basePlacemark = null;
+    let selectedTargets = [];
+    let mode = null;
+    let drawControl;
+    let baseGroups = {}; // bukan array lagi
+    let paths = []; // simpan semua polyline path
+    let manualPaths = []; // simpan path manual (DW/Dropwire)
+    let labels = [];
+    let fileLayers = {}; // menyimpan info layer per file
+    let weightstyledw = 3; // default ukuran line
+    let colorstyledw = '#ff00ff'; // default warna line
+    let weightstylelds = 3; // default ukuran line
+    let colorstylelds = '#ff00ff'; // default warna line
+    document.getElementById('kmlInput').addEventListener('change', handleKMLUpload);
+
+    function handleKMLUpload(event) {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const kmlText = e.target.result;
+        const parser = new DOMParser();
+        const kmlDoc = parser.parseFromString(kmlText, "text/xml");
+        parseKML(kmlDoc, file.name);
+        // document.getElementById('fileName').textContent = file.name;
+      };
+      reader.readAsText(file);
+    }
+
+    function parseKML(kmlDoc, filename) {
+      const layerGroup = L.layerGroup(); // Tidak langsung add ke map
+      fileLayers[filename] = { layerGroup, filename };
+
+      const placemarkElements = kmlDoc.getElementsByTagName("Placemark");
+      let allLatLngs = [];
+
+      for (let el of placemarkElements) {
+        const name = el.getElementsByTagName("name")[0]?.textContent || "Unnamed";
+        const coordsEl = el.getElementsByTagName("coordinates")[0];
+        if (!coordsEl) continue;
+        const coordsText = coordsEl.textContent.trim();
+
+        const lineStringEl = el.getElementsByTagName("LineString")[0];
+        if (lineStringEl) {
+          const coordsLine = lineStringEl.getElementsByTagName("coordinates")[0]?.textContent.trim();
+          if (!coordsLine) continue;
+          const coordPairsLine = coordsLine.split(/\s+/);
+          const latlngsLine = coordPairsLine.map(pair => {
+            const [lon, lat] = pair.split(",").map(Number);
+            return [lat, lon];
+          });
+
+          const polyline = L.polyline(latlngsLine, { color: 'magenta' }).addTo(layerGroup);
+          polyline.on('click', () => handlePathClick ? handlePathClick(polyline) : null);
+          paths.push({ name, polyline, layerGroup: layerGroup }); 
+          latlngsLine.forEach(latlng => allLatLngs.push(latlng));
+
+        } else {
+          const coordPairs = coordsText.split(/\s+/);
+          if (coordPairs.length === 1) {
+            const [lon, lat] = coordPairs[0].split(",").map(Number);
+            const { marker, label } = addLabeledMarker(name, lat, lon);
+            marker.on('click', (e) => handleClick(e.originalEvent, marker, name, lat, lon));
+            placemarks.push({ name, lat, lon, marker, label, layerGroup: layerGroup });
+
+            // Sertakan marker dan label ke layerGroup
+            layerGroup.addLayer(marker);
+            allLatLngs.push([lat, lon]);
+          } else {
+            const latlngs = coordPairs.map(pair => {
+              const [lon, lat] = pair.split(",").map(Number);
+              return [lat, lon];
+            });
+
+            const polygon = L.polygon(latlngs, { color: 'green', fillOpacity: 0.3 }).addTo(layerGroup);
+            polygon.on('click', () => handlePolygonClick(polygon));
+            polygons.push({ name, polygon, layerGroup: layerGroup });
+            layerGroup.addLayer(polygon);
+            latlngs.forEach(latlng => allLatLngs.push(latlng));
+          }
+        }
+      }
+
+      let labelOpacity = 1;
+      function drawLabelsOnCanvas() {
+        if (!map._canvas) return;
+        const ctx = map._canvas.getContext('2d');
+        ctx.save();
+        ctx.clearRect(0, 0, map._canvas.width, map._canvas.height);
+        ctx.globalAlpha = labelOpacity;
+        placemarks.forEach(p => {
+          // Hanya label yang visible di viewport dan layerGroup-nya aktif di map
+          if (p.layerGroup && !map.hasLayer(p.layerGroup)) return;
+          const latlng = L.latLng(p.lat, p.lon);
+          if (!map.getBounds().contains(latlng)) return;
+          const point = map.latLngToContainerPoint(latlng);
+          ctx.font = 'bold 13px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.strokeStyle = 'black';
+          ctx.lineWidth = 3;
+          ctx.strokeText(p.name, point.x, point.y - 40);
+          ctx.fillStyle = 'white';
+          ctx.fillText(p.name, point.x, point.y - 40);
+        });
+        ctx.restore();
+      }
+    // Efek transparan label saat peta bergerak/zoom
+    map.on('movestart zoomstart', () => {
+      labelOpacity = 0.3;
+      drawLabelsOnCanvas();
+    });
+    map.on('moveend zoomend', () => {
+      labelOpacity = 1;
+      drawLabelsOnCanvas();
+    });
+
+      function ensureMapCanvas() {
+        if (map._canvas) return;
+        const canvas = document.createElement('canvas');
+        canvas.style.position = 'absolute';
+        canvas.style.pointerEvents = 'none';
+        canvas.style.zIndex = 500;
+        canvas.width = map.getSize().x;
+        canvas.height = map.getSize().y;
+        map._canvas = canvas;
+        map.getContainer().appendChild(canvas);
+        map.on('move zoom resize', () => {
+          canvas.width = map.getSize().x;
+          canvas.height = map.getSize().y;
+          drawLabelsOnCanvas();
+        });
+      }
+
+      // Inisialisasi canvas overlay setelah peta siap
+      map.whenReady(() => {
+        ensureMapCanvas();
+        drawLabelsOnCanvas();
+      });
+      map.on('move zoom resize', drawLabelsOnCanvas);
+
+  // Label dan marker langsung di layerGroup
+  map.addLayer(layerGroup);
+
+      // Auto zoom
+      if (allLatLngs.length > 0) {
+        const bounds = L.latLngBounds(allLatLngs);
+        map.fitBounds(bounds, { padding: [20,20] });
+      }
+
+      // Tambahkan ke daftar fileLayerList dengan checkbox dan delete button
+      const fileLayerList = document.getElementById("fileLayerList");
+      const li = document.createElement("li");
+      li.classList.add("file-layer-item");
+
+      const label = document.createElement("label");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = true;
+      checkbox.onchange = () => {
+        if (checkbox.checked) {
+          map.addLayer(layerGroup);
+        } else {
+          map.removeLayer(layerGroup);
+        }
+      };
+
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = ` ${filename} `;
+
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "🗑️";
+      delBtn.title = "Hapus file ini dari peta";
+      delBtn.className = "delete-btn";
+      delBtn.onclick = () => {
+        if (confirm(`Hapus layer file \"${filename}\" dari peta?`)) {
+          map.removeLayer(layerGroup);
+          // Hapus placemarks yang layerGroup-nya sama
+          placemarks = placemarks.filter(p => {
+            if (p.layerGroup === layerGroup) {
+              map.removeLayer(p.marker);
+              return false;
+            }
+            return true;
+          });
+          // Hapus polygons yang layerGroup-nya sama
+          polygons = polygons.filter(pg => {
+            if (pg.layerGroup === layerGroup) {
+              map.removeLayer(pg.polygon);
+              return false;
+            }
+            return true;
+          });
+          // Hapus paths yang layerGroup-nya sama
+          paths = paths.filter(path => {
+            if (path.layerGroup === layerGroup) {
+              if (path.polyline) map.removeLayer(path.polyline);
+              return false;
+            }
+            return true;
+          });
+          delete fileLayers[filename];
+          fileLayerList.removeChild(li);
+          if (typeof drawLabelsOnCanvas === 'function') drawLabelsOnCanvas();
+          // Reset input file agar event change bisa terpicu walau file sama
+          document.getElementById('kmlInput').value = "";
+        }
+      };
+
+      // // Tombol Edit Style
+      // const editBtn = document.createElement("button");
+      // editBtn.textContent = "✏️";
+      // editBtn.title = "Edit warna/ukuran garis/marker";
+      // editBtn.className = "edit-btn";
+      // editBtn.onclick = () => {
+      //   // Cek apakah layerGroup hanya berisi marker (placemark)
+      //   let isMarkerOnly = true;
+      //   let markerObj = null;
+      //   layerGroup.eachLayer(l => {
+      //     if (l instanceof L.Marker) markerObj = l;
+      //     if (!(l instanceof L.Marker)) isMarkerOnly = false;
+      //   });
+      //   if (isMarkerOnly && markerObj) {
+      //     showEditStyleModal({
+      //       type: 'marker',
+      //       marker: markerObj,
+      //       li: li
+      //     });
+      //   } else {
+      //     showEditStyleModal({
+      //       type: 'file',
+      //       layerGroup: layerGroup,
+      //       li: li
+      //     });
+      //   }
+      // };
+
+      label.appendChild(checkbox);
+      label.appendChild(nameSpan);
+      li.appendChild(label);
+      //li.appendChild(editBtn);
+      li.appendChild(delBtn);
+      fileLayerList.appendChild(li);
+    }
+
+
+
+
+    function setBaseMode() { mode = "base"; removeDraw(); }
+    function setPolygonMode() { mode = "polygon"; removeDraw(); }
+    function setPlacemarkMode() { mode = "placemark"; removeDraw(); }
+    function setAreaMode() {
+      mode = "area";
+      removeDraw();
+      drawControl = new L.Control.Draw({
+        draw: {
+          polygon: {
+            allowIntersection: false,
+            showArea: true,
+            shapeOptions: { color: 'green', fillOpacity: 0.3 }
+          },
+          polyline: false,
+          rectangle: false,
+          circle: false,
+          marker: false,
+          circlemarker: false
+        },
+        edit: false
+      });
+      map.addControl(drawControl);
+    }
+
+
+
+    // Manual Path Mode dengan label awal/akhir placemark
+    let manualPathLatLngs = [];
+    let manualPathPolyline = null;
+    let manualPathTooltip = null;
+    let manualPathStartLabel = null;
+    let manualPathEndLabel = null;
+    let isManualPathDrawing = false;
+    function setManualPathMode() {
+      mode = "manualPath";
+      isManualPathDrawing = true;
+      removeDraw();
+      clearManualPath();
+      map.getContainer().style.cursor = "crosshair";
+      manualPathTooltip = L.tooltip({
+        permanent: false,
+        direction: 'top',
+        className: 'manual-path-tooltip',
+        offset: [0, -5]
+      })
+      .setContent('Klik kiri: tambah titik, klik kanan: hapus titik terakhir, Enter: selesai')
+      .setLatLng(map.getCenter())
+      .addTo(map);
+
+      map.on('mousemove', manualPathMouseMove);
+      map.on('click', manualPathAddPoint);
+      map.on('contextmenu', manualPathRemoveLastPoint);
+      //map.on('dblclick', manualPathFinish);
+      window.addEventListener('keydown', function(e) {
+        console.log('keydown event:', e.key, 'isManualPathDrawing:', isManualPathDrawing);
+        if (isManualPathDrawing && e.key === 'Enter') {
+          console.log('Enter pressed, finishing manual path...');
+          manualPathFinish();
+        }
+      });
+
+      // Tambahkan event click khusus ke semua marker placemark
+      placemarks.forEach(p => {
+        if (!p._manualPathMarkerHandler) {
+          p._manualPathMarkerHandler = function(e) {
+            if (mode === "manualPath") {
+              manualPathAddPoint({
+                latlng: p.marker.getLatLng(),
+                originalEvent: e.originalEvent || e,
+                _fromMarker: true
+              });
+              // Agar tooltip pada marker tidak muncul
+              if (e.originalEvent) e.originalEvent.preventDefault();
+              e.preventDefault && e.preventDefault();
+              e.stopPropagation && e.stopPropagation();
+            }
+          };
+          p.marker.on('click', p._manualPathMarkerHandler);
+        }
+      });
+    }
+
+    function clearManualPath() {
+      if (manualPathPolyline) {
+        map.removeLayer(manualPathPolyline);
+        manualPathPolyline = null;
+      }
+      manualPathLatLngs = [];
+      manualPathStartLabel = null;
+      manualPathEndLabel = null;
+      if (manualPathTooltip) {
+        map.removeLayer(manualPathTooltip);
+        manualPathTooltip = null;
+      }
+      map.getContainer().style.cursor = "";
+      map.off('mousemove', manualPathMouseMove);
+      map.off('click', manualPathAddPoint);
+      map.off('contextmenu', manualPathRemoveLastPoint);
+      // map.off('dblclick', manualPathFinish);
+      // Hapus event click khusus dari marker placemark
+      placemarks.forEach(p => {
+        if (p._manualPathMarkerHandler) {
+          p.marker.off('click', p._manualPathMarkerHandler);
+          delete p._manualPathMarkerHandler;
+        }
+      });
+    }
+
+    function manualPathMouseMove(e) {
+      if (manualPathTooltip) manualPathTooltip.setLatLng(e.latlng);
+    }
+
+    function manualPathAddPoint(e) {
+      if (mode !== "manualPath") return;
+      let clickedPlacemark = null;
+      // Cek apakah klik pada marker placemark (toleransi lebih kecil, dan hanya jika dari marker event)
+      if (e._fromMarker) {
+        for (let p of placemarks) {
+          if (p.marker && p.marker.getLatLng().distanceTo(e.latlng) < 1) { // 1 meter toleransi
+            clickedPlacemark = p;
+            break;
+          }
+        }
+      }
+      if (manualPathLatLngs.length === 0 && clickedPlacemark) {
+        // Titik awal path dari placemark, label tidak diambil
+        manualPathStartLabel = null;
+        manualPathLatLngs.push([clickedPlacemark.lat, clickedPlacemark.lon]);
+      } else if (clickedPlacemark) {
+        // Titik berikutnya, jika placemark, update label akhir
+        let label = clickedPlacemark.name;
+        if (label.toUpperCase().startsWith('ODP')) {
+          label = label.substring(4).trim();
+        }
+        manualPathEndLabel = label;
+        manualPathLatLngs.push([clickedPlacemark.lat, clickedPlacemark.lon]);
+      } else {
+        // Titik biasa
+        manualPathLatLngs.push([e.latlng.lat, e.latlng.lng]);
+      }
+      if (manualPathPolyline) {
+        manualPathPolyline.setLatLngs(manualPathLatLngs);
+      } else {
+        manualPathPolyline = L.polyline(manualPathLatLngs, { color: 'red', weight: 3 }).addTo(map);
+      }
+      e.originalEvent.preventDefault();
+    }
+
+    function manualPathRemoveLastPoint(e) {
+      if (mode !== "manualPath") return;
+      if (manualPathLatLngs.length > 0) {
+        // Jika titik terakhir adalah placemark, update label akhir
+        const last = manualPathLatLngs[manualPathLatLngs.length - 1];
+        for (let p of placemarks) {
+          if (p.lat === last[0] && p.lon === last[1]) {
+            if (manualPathLatLngs.length === 1) {
+              manualPathStartLabel = null;
+            } else {
+              manualPathEndLabel = null;
+            }
+            break;
+          }
+        }
+        manualPathLatLngs.pop();
+
+        // Jika start label null, ambil dari titik pertama yang masih ada
+        if (manualPathStartLabel == null && manualPathLatLngs.length > 0) {
+          const first = manualPathLatLngs[0];
+          // Cari placemark yang cocok
+          let label = null;
+          for (let p of placemarks) {
+            if (p.lat === first[0] && p.lon === first[1]) {
+              label = p.name;
+              if (label.toUpperCase().startsWith('ODP')) {
+                label = label.substring(4).trim();
+              }
+              break;
+            }
+          }
+          manualPathStartLabel = label;
+        }
+
+        if (manualPathLatLngs.length === 0 && manualPathPolyline) {
+          map.removeLayer(manualPathPolyline);
+          manualPathPolyline = null;
+        } else if (manualPathPolyline) {
+          manualPathPolyline.setLatLngs(manualPathLatLngs);
+        }
+      }
+      e.preventDefault();
+    }
+
+    function manualPathFinish(e) {
+      isManualPathDrawing = false;
+      
+      if (mode !== "manualPath") return;
+      const groupNameInput = document.getElementById('groupName').value.trim();
+      if (manualPathLatLngs.length > 1) {
+        // Validasi groupName
+        if (!groupNameInput) {
+          alert("Masukkan nama group terlebih dahulu.");
+          clearManualPath();
+          mode = null;
+          e.preventDefault();
+          return;
+        }
+        // Hitung panjang path (meter)
+        let totalLength = 0;
+        for (let i = 1; i < manualPathLatLngs.length; i++) {
+          const latlng1 = L.latLng(manualPathLatLngs[i-1][0], manualPathLatLngs[i-1][1]);
+          const latlng2 = L.latLng(manualPathLatLngs[i][0], manualPathLatLngs[i][1]);
+          totalLength += latlng1.distanceTo(latlng2);
+        }
+        if (totalLength < 41.5) {
+          totalLength = 50;
+        } else {
+          totalLength = 100;
+        }
+        //totalLength = Math.round(totalLength);
+        // Label: DISTRIBUSI 1C (label placemark terakhir) (panjang)m
+        let labelAkhir = null;
+        const last = manualPathLatLngs[manualPathLatLngs.length - 1];
+        for (let p of placemarks) {
+          if (p.lat === last[0] && p.lon === last[1]) {
+            labelAkhir = p.name;
+            if (labelAkhir.toUpperCase().startsWith('ODP')) {
+              labelAkhir = labelAkhir.substring(4).trim();
+            }
+            break;
+          }
+        }
+        let labelPath = '';
+        if (labelAkhir) {
+          labelPath = `DISTRIBUSI 1C ${labelAkhir} ${totalLength}m`;
+        } else {
+          labelPath = `DISTRIBUSI 1C ${totalLength}m`;
+        }
+        const polyline = L.polyline(manualPathLatLngs, { color: colorstylelds, weight: weightstylelds }).addTo(map);
+        // Tampilkan label di tengah path
+        // if (labelPath) {
+        //   polyline.bindTooltip(labelPath, {permanent: true, direction: 'center', className: 'manual-path-label'}).openTooltip();
+        // }
+        ensureLineDSFolderInFileList();
+        paths.push({ polyline, name: labelPath });
+        manualPaths.push({
+          name: labelPath,
+          latlngs: manualPathLatLngs.map(ll => ({ lat: ll[0], lon: ll[1] })),
+          group: groupNameInput,
+          polyline: polyline
+        });
+        updateGroupSidebar();
+      }
+      clearManualPath();
+      mode = null;
+  if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    }
+
+    function manualPathMouseMove(e) {
+      if (manualPathTooltip) manualPathTooltip.setLatLng(e.latlng);
+    }
+
+    // Hapus duplikasi fungsi manualPathAddPoint/manualPathRemoveLastPoint/manualPathFinish di bawah ini
+
+    function removeDraw() {
+      if (drawControl) {
+        map.removeControl(drawControl);
+        drawControl = null;
+      }
+      clearManualPath();
+    }
+
+    function handleClick(event, marker, name, lat, lon) {
+      if (mode === "base") {
+        // Jika Ctrl ditekan dan marker ini adalah base saat ini → unselect
+        if (event.ctrlKey && basePlacemark && basePlacemark.lat === lat && basePlacemark.lon === lon) {
+          resetMarkerIcon(marker);
+          basePlacemark = null;
+          return;
+        }
+
+        // Ganti base yang lama dengan yang baru
+        if (basePlacemark) resetMarkerIcon(basePlacemark.marker);
+        basePlacemark = { name, lat, lon, marker };
+
+        marker.setIcon(L.icon({ 
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41] }));
+      } else if (mode === "placemark") {
+        if (event.shiftKey) {
+          const alreadySelected = selectedTargets.find(p => p.lat === lat && p.lon === lon);
+          if (!alreadySelected) {
+            selectedTargets.push({ name, lat, lon, marker });
+            marker.setIcon(L.icon({ 
+              iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-orange.png',
+              shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+              iconSize: [25, 41],
+              iconAnchor: [12, 41],
+              popupAnchor: [1, -34],
+              shadowSize: [41, 41] }));
+          }
+        } else if (event.ctrlKey) {
+          const index = selectedTargets.findIndex(p => p.lat === lat && p.lon === lon);
+          if (index !== -1) {
+            const selected = selectedTargets[index];
+            resetMarkerIcon(selected.marker);
+            selectedTargets.splice(index, 1);
+          }
+        }
+      }
+    }
+
+    // Fungsi cek titik di dalam polygon, termasuk polygon multi-ring (dengan lubang)
+    function leafletPointInPolygon(point, polygonLatLngs) {
+      if (!polygonLatLngs || polygonLatLngs.length === 0) return false;
+
+      // Jika polygonLatLngs adalah array dari koordinat (single ring)
+      if (polygonLatLngs[0].lat !== undefined && polygonLatLngs[0].lng !== undefined) {
+        return pointInPolygon(point, polygonLatLngs);
+      } else {
+        // Multi ring (multi polygon)
+        let outerRing = polygonLatLngs[0];
+        if (!pointInPolygon(point, outerRing)) return false;
+
+        // Jika point ada di lubang, return false
+        for (let i = 1; i < polygonLatLngs.length; i++) {
+          if (pointInPolygon(point, polygonLatLngs[i])) {
+            return false;
+          }
+        }
+        return true;
+      }
+    }
+
+    function pointInPolygon(point, vs) {
+      let x = point.lat, y = point.lng;
+      let inside = false;
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        let xi = vs[i].lat, yi = vs[i].lng;
+        let xj = vs[j].lat, yj = vs[j].lng;
+
+        let intersect = ((yi > y) !== (yj > y)) &&
+          (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+    let selectedPolygons = [];
+    function handlePolygonClick(polygonLayer) {
+      if (mode !== "polygon") return;
+
+      const polygonLatLngs = polygonLayer.getLatLngs();
+
+      // Tambah polygon ke selectedPolygons jika belum ada
+      const existing = selectedPolygons.find(p => p.polygon === polygonLayer);
+      if (!existing) {
+        selectedPolygons.push({ name: polygonLayer.feature?.properties?.name || "Coverage", polygon: polygonLayer });
+      }
+
+      placemarks.forEach(p => {
+        const point = L.latLng(p.lat, p.lon);
+        if (basePlacemark && p.name === basePlacemark.name) return;
+
+        if (leafletPointInPolygon(point, polygonLatLngs)) {
+          const alreadySelected = selectedTargets.find(t => t.lat === p.lat && t.lon === p.lon);
+          if (!alreadySelected) {
+            selectedTargets.push({ name: p.name, lat: p.lat, lon: p.lon, marker: p.marker });
+            p.marker.setIcon(L.icon({
+              iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-orange.png',
+              shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+              iconSize: [25, 41],
+              iconAnchor: [12, 41]
+            }));
+          }
+        }
+      });
+      mode = "placemark"; removeDraw();
+    }
+
+
+    map.on(L.Draw.Event.CREATED, function (e) {
+      if (mode !== "area") return;
+      const layer = e.layer;
+      const polygonLatLngs = layer.getLatLngs();
+      map.removeLayer(layer);
+
+      placemarks.forEach(p => {
+        const point = L.latLng(p.lat, p.lon);
+        if (basePlacemark && p.name === basePlacemark.name) return;
+        if (leafletPointInPolygon(point, polygonLatLngs)) {
+          const alreadySelected = selectedTargets.find(t => t.lat === p.lat && t.lon === p.lon);
+          if (!alreadySelected) {
+            selectedTargets.push({ name: p.name, lat: p.lat, lon: p.lon, marker: p.marker });
+            p.marker.setIcon(L.icon({
+              iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-orange.png',
+              shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+              iconSize: [25, 41],
+              iconAnchor: [12, 41]
+            }));
+          }
+        }
+      });
+      mode = "placemark";
+      removeDraw();
+    });
+
+    function addLabeledMarker(name, lat, lon) {
+      // Marker standar
+      const marker = L.marker([lat, lon]);
+      // Label canvas: hanya simpan data, render manual di event
+      return { marker, label: { name, lat, lon } };
+    }
+
+    function generatePaths() {
+    ensureDWFolderInFileList();
+      const groupNameInput = document.getElementById('groupName').value.trim();
+      if (!groupNameInput) {
+        alert("Masukkan nama group terlebih dahulu.");
+        return;
+      }
+
+      if (!basePlacemark || selectedTargets.length === 0) {
+        alert("Pilih base dan target terlebih dahulu.");
+        return;
+      }
+
+      // Jika grup belum ada, buat
+      if (!baseGroups[groupNameInput]) {
+        baseGroups[groupNameInput] = {
+          name: groupNameInput,
+          sets: []
+        };
+      }
+
+      // Tambahkan set baru (base + targets)
+      baseGroups[groupNameInput].sets.push({
+        base: basePlacemark,
+        targets: [...selectedTargets]
+      });
+     
+
+      // Gambar garis ke masing-masing target
+      selectedTargets.forEach(target => {
+        const pathLine = L.polyline([[basePlacemark.lat, basePlacemark.lon], [target.lat, target.lon]], { color: colorstyledw,weight: weightstyledw }).addTo(map);
+        pathLine._dwType = 'dw'; // flag agar bisa di-hide/show
+        paths.push(pathLine); // 🆕 Simpan ke array
+        resetMarkerIcon(target.marker);
+      });
+      
+      resetMarkerIcon(basePlacemark.marker);
+
+      // Reset pemilihan
+      selectedTargets = [];
+      basePlacemark = null;
+      updateGroupSidebar();
+ 
+    }
+
+    
+
+
+
+
+    //   document.getElementById('groupName').value = ""; // clear setelah disimpan
+    // }
+
+
+    function resetMarkerIcon(marker) {
+      marker.setIcon(L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41]
+      }));
+    }
+    function escapeXML(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    }
+
+    
+
+
+
+
+    function exportKML() {
+      if (Object.keys(baseGroups).length === 0 && manualPaths.length === 0) {
+        alert("Tidak ada data untuk di-export.");
+        return;
+      }
+      let kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+        <kml xmlns="http://www.opengis.net/kml/2.2">
+        <Document>`;
+      //Buat Style
+      kmlContent += styleConten
+
+      // Gabungkan semua groupName unik dari baseGroups dan manualPaths
+      const allGroupNames = Array.from(new Set([
+        ...Object.keys(baseGroups),
+        ...manualPaths.map(mp => mp.group)
+      ]));
+
+      allGroupNames.forEach(groupName => {
+        if (!groupName) return;
+        kmlContent += `<Folder><name>${groupName}</name>`;
+        // BaseGroups (ODP, HC, DW, Boundary Coverage)
+        const group = baseGroups[groupName];
+        if (group) {
+          // <StyleMap'
+          // Subfolder ODP (Base)
+          kmlContent += `<Folder><name>ODP</name>`;
+          group.sets.forEach(set => {
+            const b = set.base;
+            kmlContent += `
+              <Placemark>
+                <name>${escapeXML(b.name)}</name>
+                <styleUrl>#m_ylw-pushpin1</styleUrl>
+                <Point><coordinates>${b.lon},${b.lat},0</coordinates></Point>
+              </Placemark>`;
+          });
+          kmlContent += `</Folder>`;
+
+          // Subfolder HC (Target)
+          kmlContent += `<Folder><name>HC</name>`;
+          group.sets.forEach(set => {
+            set.targets.forEach(t => {
+              kmlContent += `
+                <Placemark>
+                  <name>${escapeXML(t.name)}</name>
+                  <styleUrl>#m_ylw-pushpin2</styleUrl>
+                  <Point><coordinates>${t.lon},${t.lat},0</coordinates></Point>
+                </Placemark>`;
+            });
+          });
+          kmlContent += `</Folder>`;
+
+          // Subfolder DW (Path)
+          kmlContent += `<Folder><name>DW</name>`;
+          group.sets.forEach(set => {
+            const b = set.base;
+            set.targets.forEach(t => {
+              kmlContent += `
+                <Placemark>
+                  <name>DW: ${escapeXML(b.name)} -> ${escapeXML(t.name)}</name>
+                  <styleUrl>#m_ylw-pushpin</styleUrl>
+                  <LineString>
+                    <coordinates>
+                      ${b.lon},${b.lat},0
+                      ${t.lon},${t.lat},0
+                    </coordinates>
+                  </LineString>
+                </Placemark>`;
+            });
+          });
+          kmlContent += `</Folder>`;
+
+          // Subfolder Boundary Coverage
+          kmlContent += `<Folder><name>BOUNDARY COVERAGE</name>`;
+          selectedPolygons.forEach(pg => {
+            const polygonLatLngs = pg.polygon.getLatLngs();
+
+            const containsAnyTarget = group.sets.some(set =>
+              set.targets.some(t =>
+                leafletPointInPolygon(L.latLng(t.lat, t.lon), polygonLatLngs)
+              )
+            );
+
+            if (containsAnyTarget) {
+              let rings = Array.isArray(polygonLatLngs[0]) ? polygonLatLngs : [polygonLatLngs];
+
+              rings = rings.map(ring => {
+                if (ring.length > 0) {
+                  const first = ring[0];
+                  const last = ring[ring.length - 1];
+                  if (first.lat !== last.lat || first.lng !== last.lng) {
+                    ring.push(first);
+                  }
+                }
+                return ring;
+              });
+
+              kmlContent += `
+                <Placemark>
+                  <name>${escapeXML(pg.name)}</name>
+                  <styleUrl>#m_ylw-pushpin0</styleUrl>
+                  <Polygon>
+                    <outerBoundaryIs>
+                      <LinearRing>
+                        <coordinates>
+                          ${rings[0].map(ll => `${ll.lng},${ll.lat},0`).join(' ')}
+                        </coordinates>
+                      </LinearRing>
+                    </outerBoundaryIs>`;
+
+              for (let i = 1; i < rings.length; i++) {
+                kmlContent += `
+                    <innerBoundaryIs>
+                      <LinearRing>
+                        <coordinates>
+                          ${rings[i].map(ll => `${ll.lng},${ll.lat},0`).join(' ')}
+                        </coordinates>
+                      </LinearRing>
+                    </innerBoundaryIs>`;
+              }
+
+              kmlContent += `
+                  </Polygon>
+                </Placemark>`;
+            }
+          });
+          kmlContent += `</Folder>`; // Boundary Coverage
+        }
+
+        // Tambahkan folder LINE DS jika ada path manual untuk grup ini
+        const groupManualPaths = manualPaths.filter(mp => mp.group === groupName);
+        if (groupManualPaths.length > 0) {
+          kmlContent += `<Folder><name>LINE DS</name>`;
+          groupManualPaths.forEach(mp => {
+            if (mp.latlngs.length > 1) {
+              kmlContent += `
+                <Placemark>
+                  <name>${escapeXML(mp.name)}</name>
+                  <styleUrl>#manual-path-aa00ff</styleUrl>
+                  <LineString>
+                    <coordinates>
+                      ${mp.latlngs.map(ll => `${ll.lon},${ll.lat},0`).join('\n')}
+                    </coordinates>
+                  </LineString>
+                </Placemark>`;
+            }
+          });
+          kmlContent += `</Folder>`;
+        }
+
+        kmlContent += `</Folder>`; // Group
+      });
+
+      kmlContent += `</Document></kml>`;
+
+      const blob = new Blob([kmlContent], { type: "application/vnd.google-earth.kml+xml" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      // Ambil nama file dari input textbox, tambahkan .kml kalau belum ada
+      let fileName = document.getElementById('exportFileName').value.trim();
+      if (!fileName) {
+        alert("Silakan isi nama file terlebih dahulu!");
+        return;  // hentikan proses export sampai user isi nama file
+      }
+      if (!fileName.toLowerCase().endsWith('.kml')) fileName += '.kml';
+      a.download = fileName;
+      a.click();
+
+      URL.revokeObjectURL(url);
+
+      // Setelah export, ubah warna semua polyline manualPaths menjadi #aa00ff
+      manualPaths.forEach(mp => {
+        if (mp.polyline && mp.polyline.setStyle) {
+          mp.polyline.setStyle({ color: '#aa00ff' });
+        }
+      });
+    }
+    function updateGroupSidebar() {
+      const list = document.getElementById("baseGroupList");
+      if (!list) return;
+      list.innerHTML = "";
+      // Gabungkan semua nama grup unik dari baseGroups dan manualPaths
+      const groupNames = Array.from(new Set([
+        ...Object.keys(baseGroups),
+        ...manualPaths.map(mp => mp.group)
+      ]));
+      groupNames.forEach(groupName => {
+        if (!groupName) return;
+        const li = document.createElement("li");
+        li.className = "group-item";
+        const groupHeader = document.createElement("div");
+        groupHeader.className = "group-header";
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "group-name";
+        nameSpan.textContent = groupName;
+        const actionsDiv = document.createElement("div");
+        actionsDiv.className = "group-actions";
+        // Rename
+        const renameBtn = document.createElement("button");
+        renameBtn.textContent = "Rename";
+        renameBtn.onclick = () => {
+          const newName = prompt("Masukkan nama baru untuk grup:", groupName);
+          if (newName && newName !== groupName) {
+            if (groupNames.includes(newName) || baseGroups[newName]) {
+              alert("Nama grup sudah ada.");
+              return;
+            }
+            // Rename manualPaths
+            manualPaths.forEach(mp => {
+              if (mp.group === groupName) mp.group = newName;
+            });
+            // Rename baseGroups
+            if (baseGroups[groupName]) {
+              baseGroups[newName] = baseGroups[groupName];
+              baseGroups[newName].name = newName;
+              delete baseGroups[groupName];
+            }
+            updateGroupSidebar();
+          }
+        };
+        // Delete
+        const deleteBtn = document.createElement("button");
+        deleteBtn.textContent = "Delete";
+        deleteBtn.onclick = () => {
+          if (confirm(`Hapus semua data grup "${groupName}"? Semua path manual dan hasil generate di grup ini akan dihapus!`)) {
+            // Hapus manualPaths
+            for (let i = manualPaths.length - 1; i >= 0; i--) {
+              if (manualPaths[i].group === groupName) {
+                if (manualPaths[i].polyline && map.hasLayer(manualPaths[i].polyline)) {
+                  map.removeLayer(manualPaths[i].polyline);
+                }
+                manualPaths.splice(i, 1);
+              }
+            }
+            // Hapus baseGroups
+            if (baseGroups[groupName]) {
+              if (baseGroups[groupName].sets) {
+                baseGroups[groupName].sets.forEach(set => {
+                  set.targets.forEach(target => {
+                    const matchingPathIndex = paths.findIndex(p => {
+                      const polyline = p.polyline || p;
+                      const latlngs = polyline.getLatLngs();
+                      if (!latlngs || latlngs.length !== 2) return false;
+                      return (
+                        (latlngs[0].lat === set.base.lat && latlngs[0].lng === set.base.lon &&
+                        latlngs[1].lat === target.lat && latlngs[1].lng === target.lon) ||
+                        (latlngs[1].lat === set.base.lat && latlngs[1].lng === set.base.lon &&
+                        latlngs[0].lat === target.lat && latlngs[0].lng === target.lon)
+                      );
+                    });
+                    if (matchingPathIndex !== -1) {
+                      const pathObj = paths[matchingPathIndex];
+                      const polyline = pathObj.polyline || pathObj;
+                      if (polyline && map.hasLayer(polyline)) {
+                        map.removeLayer(polyline);
+                      }
+                      paths.splice(matchingPathIndex, 1);
+                    }
+                  });
+                });
+              }
+              delete baseGroups[groupName];
+            }
+            updateGroupSidebar();
+          }
+        };
+        actionsDiv.appendChild(renameBtn);
+        actionsDiv.appendChild(deleteBtn);
+        groupHeader.appendChild(nameSpan);
+        groupHeader.appendChild(actionsDiv);
+        li.appendChild(groupHeader);
+        list.appendChild(li);
+      });
+    }
+
+
+
+    
+    function UnloadAll() {
+      // Hapus folder DW dan LINE DS dari fileLayerList
+      const dwFolder = document.getElementById('dwFolderItem');
+      if (dwFolder && dwFolder.parentNode) dwFolder.parentNode.removeChild(dwFolder);
+      const linedsFolder = document.getElementById('linedsFolderItem');
+      if (linedsFolder && linedsFolder.parentNode) linedsFolder.parentNode.removeChild(linedsFolder);
+      // Bersihkan panel LINE DS
+      const linedsList = document.getElementById('linedsPathList');
+      if (linedsList) linedsList.innerHTML = "";
+      // Bersihkan panel DW
+      const dwList = document.getElementById('dwPathList');
+      if (dwList) dwList.innerHTML = "";
+          if (!confirm("Yakin ingin menghapus semua data dari peta?")) return;
+
+          // Reset icon target dan base
+          selectedTargets.forEach(t => resetMarkerIcon(t.marker));
+          if (basePlacemark) resetMarkerIcon(basePlacemark.marker);
+
+      // Reset semua state
+      selectedTargets = [];
+      basePlacemark = null;
+      baseGroups = {};
+
+      // Hapus polyline manualPaths dari map sebelum dikosongkan
+      if (Array.isArray(manualPaths)) {
+        manualPaths.forEach(mp => {
+          if (mp.polyline && map.hasLayer(mp.polyline)) {
+            map.removeLayer(mp.polyline);
+          }
+          // Hapus juga dari paths jika ada
+          const idx = paths.findIndex(p => p.polyline === mp.polyline);
+          if (idx !== -1) paths.splice(idx, 1);
+        });
+      }
+      manualPaths = [];
+      updateGroupSidebar();
+
+      // Hapus marker
+      placemarks.forEach(p => {
+        map.removeLayer(p.marker);
+      });
+      placemarks = [];
+
+      // Hapus polygon
+      polygons.forEach(pg => map.removeLayer(pg.polygon));
+      polygons = [];
+
+      // Hapus semua path (termasuk manual)
+      // Hapus polyline manualPaths dari map dan dari paths
+      if (Array.isArray(manualPaths)) {
+        manualPaths.forEach(mp => {
+          if (mp.polyline && map.hasLayer(mp.polyline)) {
+            map.removeLayer(mp.polyline);
+          }
+          // Hapus juga dari paths jika ada
+          const idx = paths.findIndex(p => p.polyline === mp.polyline);
+          if (idx !== -1) paths.splice(idx, 1);
+        });
+      }
+      paths.forEach(path => {
+        const polyline = path.polyline || path;
+        if (polyline && map.hasLayer(polyline)) {
+          map.removeLayer(polyline);
+        }
+      });
+      paths = [];
+      manualPaths = [];
+
+      removeDraw();
+
+      document.getElementById('fileName').textContent = "----";
+      document.getElementById('groupName').value = "";
+      document.getElementById("baseGroupList").innerHTML = ""; // bersihkan sidebar baseGroupList
+      updateGroupSidebar();
+
+      // Bersihkan daftar file layer dan variabel terkait
+      if (typeof fileLayers !== "undefined") {
+        Object.values(fileLayers).forEach(({ layerGroup }) => {
+          if (layerGroup && map.hasLayer(layerGroup)) {
+            map.removeLayer(layerGroup);
+          }
+          if (layerGroup && layerGroup.clearLayers) {
+            layerGroup.clearLayers();
+          }
+        });
+        fileLayers = {};
+      }
+
+      const fileLayerList = document.getElementById("fileLayerList");
+      if (fileLayerList) {
+        fileLayerList.innerHTML = "";  // bersihkan daftar file
+      }
+
+      // Bersihkan label canvas
+      if (typeof drawLabelsOnCanvas === 'function') drawLabelsOnCanvas();
+
+      // Pastikan event handler file input tetap aktif
+      const kmlInput = document.getElementById('kmlInput');
+      if (kmlInput) {
+        kmlInput.value = "";
+        kmlInput.removeEventListener('change', handleKMLUpload);
+        kmlInput.addEventListener('change', handleKMLUpload);
+      }
+    }
+
+      function resetAll() {
+  // Hapus folder DW dan LINE DS dari fileLayerList
+  const dwFolder = document.getElementById('dwFolderItem');
+  if (dwFolder && dwFolder.parentNode) dwFolder.parentNode.removeChild(dwFolder);
+  const linedsFolder = document.getElementById('linedsFolderItem');
+  if (linedsFolder && linedsFolder.parentNode) linedsFolder.parentNode.removeChild(linedsFolder);
+  // Bersihkan panel LINE DS
+  const linedsList = document.getElementById('linedsPathList');
+  if (linedsList) linedsList.innerHTML = "";
+  // Bersihkan panel DW
+  const dwList = document.getElementById('dwPathList');
+  if (dwList) dwList.innerHTML = "";
+        if (!confirm("Yakin ingin mereset semua?")) return;
+        // Reset icon semua placemark ke default (biru)
+        placemarks.forEach(p => resetMarkerIcon(p.marker));
+
+  // Reset base dan target state
+  selectedTargets = [];
+  basePlacemark = null;
+  baseGroups = {};
+
+  // Hapus polyline manualPaths dari map sebelum dikosongkan
+  if (Array.isArray(manualPaths)) {
+    manualPaths.forEach(mp => {
+      if (mp.polyline && map.hasLayer(mp.polyline)) {
+        map.removeLayer(mp.polyline);
+      }
+      // Hapus juga dari paths jika ada
+      const idx = paths.findIndex(p => p.polyline === mp.polyline);
+      if (idx !== -1) paths.splice(idx, 1);
+    });
+  }
+  manualPaths = [];
+  updateGroupSidebar();
+
+        // Hapus semua path/polyline yang sudah digambar
+        paths.forEach(path => {
+          map.removeLayer(path);
+        });
+        paths = [];
+
+        // Reset label kalau perlu (label biasanya melekat dan tidak perlu dihapus, tapi kalau mau reset posisi dsb bisa tambahkan)
+
+        removeDraw();
+
+  // Kosongkan input dan nama file
+  document.getElementById('fileName').textContent = "----";
+  document.getElementById('groupName').value = "";
+  document.getElementById("baseGroupList").innerHTML = ""; // bersihkan sidebar
+  updateGroupSidebar();
+        // labels.forEach(label => {
+        //   map.removeLayer(label);
+        //   });
+        //   labels = [];
+      }
+
+
+    const styleConten = `
+      <Style id="manual-path-aa00ff">
+        <LineStyle>
+          <color>ffff00aa</color>
+          <width>3</width>
+        </LineStyle>
+      </Style>
+      <Style id="failed">
+        <IconStyle>
+          <Icon>
+            <href>http://maps.google.com/mapfiles/kml/shapes/homegardenbusiness.png</href>
+          </Icon>
+          <hotSpot x="0.5" y="0" xunits="fraction" yunits="fraction"/>
+        </IconStyle>
+        <ListStyle>
+        </ListStyle>
+        <LineStyle>
+          <color>ffff00ff</color>
+        </LineStyle>
+      </Style>
+      <Style id="failed0">
+        <IconStyle>
+          <color>ffff0000</color>
+          <Icon>
+            <href>http://maps.google.com/mapfiles/kml/shapes/triangle.png</href>
+          </Icon>
+        </IconStyle>
+        <ListStyle>
+        </ListStyle>
+      </Style>
+      <Style id="failed1">
+        <IconStyle>
+          <Icon>
+            <href>http://maps.google.com/mapfiles/kml/shapes/homegardenbusiness.png</href>
+          </Icon>
+          <hotSpot x="0.5" y="0" xunits="fraction" yunits="fraction"/>
+        </IconStyle>
+        <ListStyle>
+        </ListStyle>
+        <LineStyle>
+          <color>ffff00ff</color>
+        </LineStyle>
+      </Style>
+      <Style id="failed2">
+        <IconStyle>
+          <color>ffff0000</color>
+          <Icon>
+            <href>http://maps.google.com/mapfiles/kml/shapes/triangle.png</href>
+          </Icon>
+        </IconStyle>
+        <ListStyle>
+        </ListStyle>
+      </Style>
+      <StyleMap id="m_ylw-pushpin">
+        <Pair>
+          <key>normal</key>
+          <styleUrl>#failed1</styleUrl>
+        </Pair>
+        <Pair>
+          <key>highlight</key>
+          <styleUrl>#failed</styleUrl>
+        </Pair>
+      </StyleMap>
+      <StyleMap id="m_ylw-pushpin0">
+        <Pair>
+          <key>normal</key>
+          <styleUrl>#s_ylw-pushpin</styleUrl>
+        </Pair>
+        <Pair>
+          <key>highlight</key>
+          <styleUrl>#s_ylw-pushpin_hl</styleUrl>
+        </Pair>
+      </StyleMap>
+      <StyleMap id="m_ylw-pushpin2">
+        <Pair>
+          <key>normal</key>
+          <styleUrl>#s_ylw-pushpin</styleUrl>
+        </Pair>
+        <Pair>
+          <key>highlight</key>
+          <styleUrl>#s_ylw-pushpin_hl</styleUrl>
+        </Pair>
+      </StyleMap>
+      <StyleMap id="m_ylw-pushpin1">
+        <Pair>
+          <key>normal</key>
+          <styleUrl>#failed0</styleUrl>
+        </Pair>
+        <Pair>
+          <key>highlight</key>
+          <styleUrl>#failed2</styleUrl>
+        </Pair>
+      </StyleMap>
+      <Style id="s_ylw-pushpin">
+        <IconStyle>
+          <Icon>
+            <href>http://maps.google.com/mapfiles/kml/shapes/homegardenbusiness.png</href>
+          </Icon>
+          <hotSpot x="0.5" y="0" xunits="fraction" yunits="fraction"/>
+        </IconStyle>
+        <ListStyle>
+        </ListStyle>
+        <LineStyle>
+          <width>2</width>
+        </LineStyle>
+        <PolyStyle>
+          <color>40ff00aa</color>
+        </PolyStyle>
+      </Style>
+      <Style id="s_ylw-pushpin_hl">
+        <IconStyle>
+          <scale>1.16667</scale>
+          <Icon>
+            <href>http://maps.google.com/mapfiles/kml/shapes/homegardenbusiness.png</href>
+          </Icon>
+          <hotSpot x="0.5" y="0" xunits="fraction" yunits="fraction"/>
+        </IconStyle>
+        <ListStyle>
+        </ListStyle>
+        <LineStyle>
+          <width>2</width>
+        </LineStyle>
+        <PolyStyle>
+          <color>40ff00aa</color>
+        </PolyStyle>
+      </Style>`;
+  </script>
+</body>
+</html>
