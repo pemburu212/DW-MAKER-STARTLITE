@@ -884,6 +884,7 @@
       map.removeLayer(layer);
 
       placemarks.forEach(p => {
+        if (!map.hasLayer(p.marker)) return; // Skip jika marker disembunyikan
         const point = L.latLng(p.lat, p.lon);
         if (basePlacemark && p.name === basePlacemark.name) return;
         if (leafletPointInPolygon(point, polygonLatLngs)) {
