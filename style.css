@@ -345,7 +345,9 @@ button:disabled {
 }
 
 .custom-layer-control img {
+    width: 32px;
     height: 32px;
-    width: auto;
-    display: block;
+    object-fit: contain;
+    display: block
 }
+
