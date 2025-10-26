@@ -877,8 +877,10 @@
         }
         if (totalLength < 41.5) {
           totalLength = 50;
-        } else {
+        } else (totalLength < 91.5) {
           totalLength = 100;
+        } else {
+          totalLength = 150;
         }
         //totalLength = Math.round(totalLength);
         // Label: DISTRIBUSI 1C (label placemark terakhir) (panjang)m
@@ -1747,4 +1749,5 @@
         <PolyStyle>
           <color>40ff00aa</color>
         </PolyStyle>
+
       </Style>`;
