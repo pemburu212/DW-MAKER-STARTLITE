@@ -877,7 +877,7 @@
         }
         if (totalLength < 41.5) {
           totalLength = 50;
-        } else (totalLength < 91.5) {
+        } else if (totalLength < 91.5) {
           totalLength = 100;
         } else {
           totalLength = 150;
@@ -1751,3 +1751,4 @@
         </PolyStyle>
 
       </Style>`;
+
